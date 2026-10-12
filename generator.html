@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dokumenten Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        body { font-family: 'Arial', sans-serif; }
+        .a4-page {
+            width: 210mm;
+            min-height: 297mm;
+            background: white;
+            padding: 20mm;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            margin: auto;
+            position: relative;
+            box-sizing: border-box;
+        }
+        .hidden-doc { display: none !important; }
+        .check-box { font-family: monospace; font-size: 16px; margin-right: 8px; }
+        .table-borders td, .table-borders th { border: 1px solid #000; padding: 4px; }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen p-4 md:p-8 flex flex-col xl:flex-row gap-8 relative">
+
+    <!-- LINKE SEITE: Eingabeformular -->
+    <div class="w-full xl:w-1/3 bg-white p-6 rounded-lg shadow-md h-fit sticky top-8 overflow-y-auto" style="max-height: 90vh;">
+        <h2 class="text-2xl font-bold mb-4 text-slate-800">Dokument erstellen</h2>
+        
+        <div class="mb-4">
+            <label class="block text-sm font-bold text-blue-600 mb-2">Dokumententyp:</label>
+            <select id="doc-type-selector" onchange="switchDocumentType()" class="w-full border-2 border-blue-500 rounded p-2 text-slate-700 font-semibold focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer">
+                <option value="abnahme" selected>Abnahmeprotokoll (inkl. Mängelliste)</option>
+                <option value="vollmacht">Vollmacht zur Netzanmeldung</option>
+            </select>
+        </div>
+
+        <div class="mb-6">
+            <label class="block text-sm font-bold text-indigo-600 mb-2">Firma / Installateur:</label>
+            <!-- Dropdown wird dynamisch von JS gefüllt -->
+            <select id="installer-selector" onchange="handleInstallerChange()" class="w-full border-2 border-indigo-500 rounded p-2 text-slate-700 font-semibold focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer">
+            </select>
+            <div class="text-right mt-1">
+                <button type="button" onclick="openAdmin()" class="text-xs text-indigo-600 hover:text-indigo-800 underline font-semibold transition-colors">⚙️ Firmen verwalten</button>
+            </div>
+        </div>
+
+        <form id="data-form" class="space-y-4">
+            
+            <!-- ALLGEMEINE DATEN -->
+            <div id="inputs-allgemein" class="bg-slate-50 p-4 rounded border border-slate-200 space-y-3">
+                <h3 class="text-md font-bold text-slate-700">Allgemeine Daten</h3>
+                
+                <!-- Logo Upload für Firmen-Briefköpfe -->
+                <div id="logo-upload-container" class="hidden-doc mb-4 p-3 bg-white border border-dashed border-slate-400 rounded">
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Firmen-Logo hochladen (optional)</label>
+                    <input type="file" id="in-logo" accept="image/*" onchange="loadLogo(event)" class="w-full text-xs cursor-pointer">
+                    <p class="text-[10px] text-slate-500 mt-1">Wird automatisch in den Briefkopf eingefügt.</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700">Absender (Auftragnehmer/Installateur)</label>
+                    <input type="text" id="in-absender" value="" placeholder="z.B. Musterfirma GmbH, Musterstr. 1, Berlin" oninput="updatePreview()" class="w-full border border-slate-300 rounded p-1.5 text-sm transition-colors">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700">Empfänger (Auftraggeber/Endkunde)</label>
+                    <input type="text" id="in-empfaenger" value="Ulrike Barz, Waldstraße 7E 18337 Marlow" oninput="updatePreview()" class="w-full border border-slate-300 rounded p-1.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700">Bauvorhaben / Objekt</label>
+                    <input type="text" id="in-bauvorhaben" value="Waldstraße 7E 18337 Marlow" oninput="updatePreview()" class="w-full border border-slate-300 rounded p-1.5 text-sm">
+                </div>
+                
+                <div id="inputs-abnahme-allgemein" class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700">Angebots-Nr.</label>
+                        <input type="text" id="in-angebotsnr" value="1402" oninput="updatePreview()" class="w-full border border-slate-300 rounded p-1.5 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700">Tag der Abnahme</label>
+                        <input type="text" id="in-abnahmetag" value="16.09.2026" oninput="updatePreview()" class="w-full border border-slate-300 rounded p-1.5 text-sm">
+                    </div>
+                </div>
+            </div>
+
+            <!-- SPEZIFISCHE DATEN: ABNAHMEPROTOKOLL -->
+            <div id="inputs-abnahme" class="space-y-4">
+                <div class="bg-slate-50 p-4 rounded border border-slate-200">
+                    <h3 class="text-md font-bold text-slate-700 mb-2">Abnahmegegenstand</h3>
+                    <div class="grid grid-cols-2 gap-2 mb-2">
+                        <label class="flex items-center gap-1 text-sm"><input type="checkbox" id="chk-wp" onchange="updatePreview()"> Wärmepumpe</label>
+                        <label class="flex items-center gap-1 text-sm"><input type="checkbox" id="chk-wb" onchange="updatePreview()"> Wallbox</label>
+                        <label class="flex items-center gap-1 text-sm"><input type="checkbox" id="chk-pv" checked onchange="updatePreview()"> Photovoltaik</label>
+                        <label class="flex items-center gap-1 text-sm"><input type="checkbox" id="chk-ka" onchange="updatePreview()"> Klimaanlage</label>
+                        <label class="flex items-center gap-1 text-sm"><input type="checkbox" id="chk-zl" onchange="updatePreview()"> Zus. Leistungen</label>
+                        <label class="flex items-center gap-1 text-sm"><input type="checkbox" id="chk-wr" checked onchange="updatePreview()"> Wechselrichter</label>
+                        <label class="flex items-center gap-1 text-sm"><input type="checkbox" id="chk-es" checked onchange="updatePreview()"> Speicher</label>
+                    </div>
+                    <div class="space-y-2 mt-2">
+                        <div>
+                            <label class="text-xs font-semibold text-slate-700">Module-Anzahl:</label>
+                            <input type="text" id="in-module" value="23" oninput="updatePreview()" class="w-full border border-slate-300 rounded p-1 text-sm">
+                        </div>
+                        <div>
+                            <label class="text-xs font-semibold text-slate-700">Sonstiges:</label>
+                            <input type="text" id="in-sonstiges" oninput="updatePreview()" class="w-full border border-slate-300 rounded p-1 text-sm">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-slate-50 p-4 rounded border border-slate-200 space-y-3">
+                    <div>
+                        <h3 class="text-md font-bold text-slate-700 mb-1">Feststellungen</h3>
+                        <div class="space-y-1">
+                            <label class="flex items-start gap-1 text-sm cursor-pointer"><input type="radio" name="feststellung" value="maengelfrei" onchange="updatePreview()" class="mt-1"> Die Leistung ist mängelfrei.</label>
+                            <label class="flex items-start gap-1 text-sm cursor-pointer"><input type="radio" name="feststellung" value="maengel" checked onchange="updatePreview()" class="mt-1"> Bis auf die in der Mängelliste verzeichneten Mängel...</label>
+                            <label class="flex items-start gap-1 text-sm cursor-pointer"><input type="radio" name="feststellung" value="verweigert" onchange="updatePreview()" class="mt-1"> Die Abnahme wird verweigert.</label>
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-700">Einweisung</h3>
+                            <label class="flex items-center gap-1 text-sm"><input type="radio" name="einweisung" value="ja" checked onchange="updatePreview()"> Ja</label>
+                            <label class="flex items-center gap-1 text-sm"><input type="radio" name="einweisung" value="nein" onchange="updatePreview()"> Nein</label>
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-700">Dokumentation</h3>
+                            <label class="flex items-center gap-1 text-sm"><input type="radio" name="doku" value="ja" checked onchange="updatePreview()"> Ja</label>
+                            <label class="flex items-center gap-1 text-sm"><input type="radio" name="doku" value="nein" onchange="updatePreview()"> Nein</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-50 p-4 rounded border border-slate-200">
+                    <h3 class="text-md font-bold text-slate-700 mb-2">Mängelliste (Anlage)</h3>
+                    <div class="flex gap-4 mb-3">
+                        <label class="flex items-center gap-1 text-sm"><input type="radio" name="mangel_gegenstand" value="gesamt" checked onchange="updatePreview()"> Gesamtleistung</label>
+                        <label class="flex items-center gap-1 text-sm"><input type="radio" name="mangel_gegenstand" value="teil" onchange="updatePreview()"> Teilleistungen</label>
+                    </div>
+                    <div class="space-y-2">
+                        <input type="text" id="m1-an" placeholder="Mangel 1 an..." oninput="updatePreview()" class="w-full border rounded p-1 text-sm">
+                        <input type="text" id="m1-desc" placeholder="Beschreibung Mangel 1..." oninput="updatePreview()" class="w-full border rounded p-1 text-sm">
+                        <input type="text" id="m1-bis" placeholder="Beseitigung bis..." oninput="updatePreview()" class="w-full border rounded p-1 text-sm mb-2">
+                        <hr>
+                        <input type="text" id="m2-an" placeholder="Mangel 2 an..." oninput="updatePreview()" class="w-full border rounded p-1 text-sm mt-2">
+                        <input type="text" id="m2-desc" placeholder="Beschreibung Mangel 2..." oninput="updatePreview()" class="w-full border rounded p-1 text-sm">
+                        <input type="text" id="m2-bis" placeholder="Beseitigung bis..." oninput="updatePreview()" class="w-full border rounded p-1 text-sm">
+                    </div>
+                </div>
+            </div>
+
+            <!-- SPEZIFISCHE DATEN: VOLLMACHT -->
+            <div id="inputs-vollmacht" class="hidden-doc space-y-4">
+                <div class="bg-slate-50 p-4 rounded border border-slate-200 space-y-3">
+                    <h3 class="text-md font-bold text-slate-700">Daten des Anlagenbetreibers</h3>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700">Vorname</label>
+                            <input type="text" id="in-v-vorname" value="Max" oninput="updatePreview()" class="w-full border border-slate-300 rounded p-1.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700">Nachname</label>
+                            <input type="text" id="in-v-name" value="Mustermann" oninput="updatePreview()" class="w-full border border-slate-300 rounded p-1.5 text-sm">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700">Geburtsdatum</label>
+                        <input type="text" id="in-v-gebdatum" value="01.01.1980" oninput="updatePreview()" class="w-full border border-slate-300 rounded p-1.5 text-sm">
+                    </div>
+                    <div class="grid grid-cols-3 gap-2">
+                        <div class="col-span-2">
+                            <label class="block text-xs font-semibold text-slate-700">Straße</label>
+                            <input type="text" id="in-v-strasse" value="Musterweg" oninput="updatePreview()" class="w-full border border-slate-300 rounded p-1.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700">Hausnummer</label>
+                            <input type="text" id="in-v-hausnr" value="12" oninput="updatePreview()" class="w-full border border-slate-300 rounded p-1.5 text-sm">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700">PLZ</label>
+                            <input type="text" id="in-v-plz" value="10115" oninput="updatePreview()" class="w-full border border-slate-300 rounded p-1.5 text-sm">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-xs font-semibold text-slate-700">Ort</label>
+                            <input type="text" id="in-v-ort" value="Berlin" oninput="updatePreview()" class="w-full border border-slate-300 rounded p-1.5 text-sm">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700">Telefon</label>
+                            <input type="text" id="in-v-telefon" value="0170 1234567" oninput="updatePreview()" class="w-full border border-slate-300 rounded p-1.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700">E-Mail</label>
+                            <input type="text" id="in-v-email" value="max@example.com" oninput="updatePreview()" class="w-full border border-slate-300 rounded p-1.5 text-sm">
+                        </div>
+                    </div>
+                    <div id="v-anlage-container">
+                        <label class="block text-xs font-semibold text-slate-700 mt-2">Art der Anlage (für Generisch / Voltario)</label>
+                        <input type="text" id="in-v-anlage" value="Zählerschrank" placeholder="z.B. Photovoltaikanlage, Wärmepumpe" oninput="updatePreview()" class="w-full border border-slate-300 rounded p-1.5 text-sm">
+                    </div>
+                </div>
+
+                <div class="bg-slate-50 p-4 rounded border border-slate-200 space-y-3">
+                    <h3 class="text-md font-bold text-slate-700">Bankverbindung</h3>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700">IBAN</label>
+                        <input type="text" id="in-v-iban" value="DE12 3456 7890 1234 5678 90" oninput="updatePreview()" class="w-full border border-slate-300 rounded p-1.5 text-sm">
+                    </div>
+                    <div id="v-bank-details" class="space-y-3">
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700">BIC</label>
+                                <input type="text" id="in-v-bic" value="GENODEF1BER" oninput="updatePreview()" class="w-full border border-slate-300 rounded p-1.5 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700">Bank</label>
+                                <input type="text" id="in-v-bank" value="Musterbank" oninput="updatePreview()" class="w-full border border-slate-300 rounded p-1.5 text-sm">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700">Kontoinhaber</label>
+                            <input type="text" id="in-v-kontoinhaber" value="Max Mustermann" oninput="updatePreview()" class="w-full border border-slate-300 rounded p-1.5 text-sm">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <button type="button" onclick="generatePDF()" class="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded transition-colors shadow-lg">
+                PDF Generieren & Herunterladen
+            </button>
+        </form>
+    </div>
+
+    <!-- RECHTE SEITE: PDF Vorschau -->
+    <div class="w-full xl:w-2/3 overflow-x-auto flex flex-col items-center pb-10 gap-8" id="pdf-container">
+
+        <!-- ========================================== -->
+        <!-- TEMPLATE: ABNAHMEPROTOKOLL (2 SEITEN)      -->
+        <!-- ========================================== -->
+        <div id="pdf-template-abnahme">
+            <!-- SEITE 1 -->
+            <div class="a4-page text-[14px] leading-relaxed text-slate-900 mb-8">
+                <div class="border-b-2 border-black pb-2 mb-6">
+                    <h1 class="text-2xl font-bold">Abnahmeprotokoll</h1>
+                    <h2 class="text-sm tracking-widest text-gray-600">ABNAHME GEMÄSS § 640 BGB</h2>
+                </div>
+                <div class="grid grid-cols-2 gap-x-8 gap-y-6 mb-8">
+                    <div><p class="font-bold text-xs text-gray-500 mb-1">Auftraggeber / Endkunde</p><p class="out-empfaenger border-b border-gray-300 pb-1 min-h-[1.5rem]"></p></div>
+                    <div><p class="font-bold text-xs text-gray-500 mb-1">Angebots-Nr.</p><p class="out-angebotsnr border-b border-gray-300 pb-1 min-h-[1.5rem]"></p></div>
+                    <div><p class="font-bold text-xs text-gray-500 mb-1">Auftragnehmer / Installateur</p><p class="out-absender border-b border-gray-300 pb-1 min-h-[1.5rem]"></p></div>
+                    <div><p class="font-bold text-xs text-gray-500 mb-1">Bauvorhaben / Objekt</p><p class="out-bauvorhaben border-b border-gray-300 pb-1 min-h-[1.5rem]"></p></div>
+                </div>
+                <div class="mb-8">
+                    <h3 class="font-bold text-sm bg-gray-200 p-1 mb-2">ABNAHMEGEGENSTAND</h3>
+                    <div class="grid grid-cols-2 gap-y-2">
+                        <div><span id="out-chk-wp" class="check-box">☐</span> Wärmepumpe</div>
+                        <div><span id="out-chk-wb" class="check-box">☐</span> Wallbox</div>
+                        <div><span id="out-chk-pv" class="check-box">☐</span> Photovoltaikanlage</div>
+                        <div><span id="out-chk-ka" class="check-box">☐</span> Klimaanlage</div>
+                    </div>
+                    <div class="mt-2 text-sm ml-6">Module-Anzahl: <span id="out-module" class="border-b border-black inline-block w-16 text-center"></span></div>
+                    <div class="grid grid-cols-2 gap-y-2 mt-4">
+                        <div><span id="out-chk-zl" class="check-box">☐</span> Zusätzliche Leistungen</div>
+                        <div><span id="out-chk-wr" class="check-box">☐</span> Wechselrichter</div>
+                        <div><span id="out-chk-es" class="check-box">☐</span> Energiespeicher</div>
+                    </div>
+                    <div class="mt-2 text-sm ml-6 flex">Sonstiges: <span id="out-sonstiges" class="border-b border-black flex-grow ml-2 inline-block min-h-[1.5rem]"></span></div>
+                </div>
+                <div class="mb-8">
+                    <h3 class="font-bold text-sm bg-gray-200 p-1 mb-2">BEI DER ABNAHME WURDE FESTGESTELLT</h3>
+                    <div class="space-y-2">
+                        <div><span id="out-f-maengelfrei" class="check-box">☐</span> Die Leistung ist mängelfrei.</div>
+                        <div class="flex items-start"><span id="out-f-maengel" class="check-box mt-0.5">☐</span> <span>Bis auf die in der Mängelliste verzeichneten Mängel befindet sich die Leistung in vertragsmäßigem Zustand.</span></div>
+                        <div><span id="out-f-verweigert" class="check-box">☐</span> Die Abnahme wird verweigert. Begründung: siehe Mängelliste (Anlage).</div>
+                    </div>
+                </div>
+                <div class="mb-8">
+                    <h3 class="font-bold text-sm bg-gray-200 p-1 mb-2">EINWEISUNG UND ÜBERGABE</h3>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="flex items-center gap-4"><span class="w-48">Einweisung durchgeführt</span><span><span id="out-e-ja" class="check-box">☐</span> Ja</span><span><span id="out-e-nein" class="check-box">☐</span> Nein</span></div>
+                        <div class="flex items-center gap-4"><span class="w-48">Dokumentation übergeben</span><span><span id="out-d-ja" class="check-box">☐</span> Ja</span><span><span id="out-d-nein" class="check-box">☐</span> Nein</span></div>
+                    </div>
+                </div>
+                <div class="mt-16 grid grid-cols-3 gap-6">
+                    <div><p class="out-abnahmetag border-b border-black pb-1 mb-1 min-h-[1.5rem]"></p><p class="text-xs">Tag der Abnahme</p></div>
+                    <div class="col-span-2"></div>
+                    <div><p class="border-b border-black pb-1 mb-1 min-h-[1.5rem]"></p><p class="text-xs">Ort, Datum</p></div>
+                    <div><p class="border-b border-black pb-1 mb-1 min-h-[1.5rem]"></p><p class="text-xs">Auftraggeber/Endkunde</p></div>
+                    <div><p class="border-b border-black pb-1 mb-1 min-h-[1.5rem]"></p><p class="text-xs">Auftragnehmer/Installateur</p></div>
+                </div>
+                <div class="text-right text-xs text-gray-500 mt-4">Abnahmeprotokoll Seite 1 von 2</div>
+            </div>
+            
+            <!-- SEITE 2 -->
+            <div class="html2pdf__page-break"></div>
+            <div class="a4-page text-[14px] leading-relaxed text-slate-900">
+                <div class="border-b-2 border-black pb-2 mb-6">
+                    <h1 class="text-2xl font-bold">Mängelliste</h1>
+                    <h2 class="text-sm tracking-widest text-gray-600">ANLAGE ZUM ABNAHMEPROTOKOLL</h2>
+                </div>
+                <div class="grid grid-cols-2 gap-8 mb-6">
+                    <div class="flex"><span class="font-bold w-32">Projekt</span><span class="out-angebotsnr border-b border-black flex-grow"></span></div>
+                    <div class="flex"><span class="font-bold w-32">Abnahmetag</span><span class="out-abnahmetag border-b border-black flex-grow"></span></div>
+                </div>
+                <div class="mb-6">
+                    <h3 class="font-bold text-sm bg-gray-200 p-1 mb-2">GEGENSTAND DER ABNAHME</h3>
+                    <div class="flex gap-8">
+                        <div><span id="out-m-gesamt" class="check-box">☐</span> Gesamtleistung</div>
+                        <div><span id="out-m-teil" class="check-box">☐</span> Teilleistungen</div>
+                    </div>
+                </div>
+                <div class="mb-8">
+                    <h3 class="font-bold text-sm bg-gray-200 p-1 mb-2">FESTGESTELLTE MÄNGEL</h3>
+                    <table class="w-full text-left table-borders border-collapse">
+                        <thead><tr class="bg-gray-100 text-sm"><th class="w-12 text-center">lfd. Nr.</th><th class="w-1/4">Mängel an</th><th class="w-1/2">Beschreibung des Mangels</th><th class="w-1/4">Mängelbeseitigung bis</th></tr></thead>
+                        <tbody id="maengel-table-body"></tbody>
+                    </table>
+                </div>
+                <div class="mt-16 grid grid-cols-2 gap-12 pt-8">
+                    <div><p class="border-b border-black pb-1 mb-1 min-h-[1.5rem]"></p><p class="text-xs">Auftraggeber/Endkunde</p></div>
+                    <div><p class="border-b border-black pb-1 mb-1 min-h-[1.5rem]"></p><p class="text-xs">Auftragnehmer/Installateur</p></div>
+                </div>
+                <div class="text-right text-xs text-gray-500 mt-4">Abnahmeprotokoll Seite 2 von 2</div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TEMPLATE: VOLLMACHT SOLAR ASSEMBLY         -->
+        <!-- ========================================== -->
+        <div id="pdf-template-vollmacht-solar" class="hidden-doc">
+            <div class="a4-page text-[14px] leading-relaxed text-slate-900">
+                <div class="mb-12 mt-4">
+                    <h2 class="font-bold text-lg mb-4 underline">Anlagenbetreiber:</h2>
+                    <table class="w-2/3 text-sm">
+                        <tr><td class="py-1 w-1/3">Name:</td><td class="out-v-name font-bold"></td></tr>
+                        <tr><td class="py-1">Vorname:</td><td class="out-v-vorname font-bold"></td></tr>
+                        <tr><td class="py-1">Geburtsdatum:</td><td class="out-v-gebdatum font-bold"></td></tr>
+                        <tr><td class="py-1">Straße:</td><td class="out-v-strasse font-bold"></td></tr>
+                        <tr><td class="py-1">Hausnummer:</td><td class="out-v-hausnr font-bold"></td></tr>
+                        <tr><td class="py-1">PLZ:</td><td class="out-v-plz font-bold"></td></tr>
+                        <tr><td class="py-1">Ort:</td><td class="out-v-ort font-bold"></td></tr>
+                        <tr><td class="py-1">Email:</td><td class="out-v-email font-bold"></td></tr>
+                        <tr><td class="py-1">Telefon:</td><td class="out-v-telefon font-bold"></td></tr>
+                        <tr><td class="py-1">IBAN:</td><td class="out-v-iban font-bold"></td></tr>
+                    </table>
+                </div>
+                
+                <div class="text-center mb-10">
+                    <h1 class="text-2xl font-bold">Vollmacht</h1>
+                    <h2 class="text-lg">zum Antrags- und Garantiemanagement</h2>
+                </div>
+                
+                <p class="mb-6">Hiermit bevollmächtige ich die Solar Assembly Trades GmbH & Co. KG in meinem Auftrag folgende Unterlagen zu unterzeichnen bzw. Erklärungen abzugeben:</p>
+                
+                <ol class="list-decimal pl-6 space-y-3 mb-8">
+                    <li>sämtliche zum Anschluss meiner Erzeugungsanlage und ggf. Speichersystems notwendigen Verträge, Formulare und Anträge sowie Anzeigen von Ladeeinrichtungen gegenüber meinem Netzbetreiber,</li>
+                    <li>alle zur Umsetzung des EEG relevanten Erklärungen,</li>
+                    <li>Beauftragung eines Messstellenbetreibers,</li>
+                    <li>im Garantiefall sämtliche garantierelevanten Dokumente für die Komponenten meiner Erzeugungsanlage und ggf. Speichersystems gegenüber dem Hersteller,</li>
+                    <li>notwendige Dokumente und Erklärungen im Fall von Garantieerweiterungen des Herstellers.</li>
+                </ol>
+                
+                <p class="mb-12 text-justify">Die Solar Assembly Trades GmbH & Co. KG ist berechtigt, Untervollmacht zu erteilen. Die Vollmacht ist im Außenverhältnis unbedingt wirksam. Im Innenverhältnis ist Solar Assembly Trades GmbH & Co. KG auf solche Erklärungen beschränkt, die für die Installation der Erzeugungsanlage notwendig sind oder vom Vollmachtgeber ausdrücklich gewünscht sind.</p>
+                
+                <div class="mt-20 flex justify-between items-end">
+                    <div class="w-[45%]"><p class="border-b border-black pb-1 mb-1 min-h-[1.5rem]"></p><p class="text-xs">Ort, Datum</p></div>
+                    <div class="w-[45%]"><p class="border-b border-black pb-1 mb-1 min-h-[1.5rem]"></p><p class="text-xs">Unterschrift Anlagenbetreiber</p></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TEMPLATE: VOLLMACHT GENERISCH / CUSTOM     -->
+        <!-- ========================================== -->
+        <div id="pdf-template-vollmacht-generic" class="hidden-doc">
+            <div class="a4-page text-[14px] leading-relaxed text-slate-900">
+                <div class="flex justify-between items-start mb-8">
+                    <div class="pt-8 w-full">
+                        <div class="mb-10 mt-6 border-b-2 border-black pb-2 flex justify-between items-end">
+                            <div>
+                                <h1 class="text-2xl font-bold">Vollmacht zur Netzanmeldung</h1>
+                                <h2 class="text-sm tracking-widest text-gray-600">Vollmacht für die Anmeldung beim Netzbetreiber</h2>
+                            </div>
+                            <img src="" class="out-custom-logo hidden h-12 object-contain mb-1" alt="Logo">
+                        </div>
+                    </div>
+                </div>
+
+                <p class="mb-4">Hiermit bevollmächtige ich, Anlagenbetreiber</p>
+                
+                <div class="bg-gray-50 p-4 mb-6 border border-gray-200 rounded">
+                    <table class="w-full text-sm">
+                        <tr><td class="py-1 w-1/4 font-bold">Name:</td><td class="out-v-fullname"></td></tr>
+                        <tr><td class="py-1 font-bold">Geburtsdatum:</td><td class="out-v-gebdatum"></td></tr>
+                        <tr><td class="py-1 font-bold">Straße / Nr.:</td><td><span class="out-v-strasse"></span> <span class="out-v-hausnr"></span></td></tr>
+                        <tr><td class="py-1 font-bold">PLZ/Ort:</td><td><span class="out-v-plz"></span> <span class="out-v-ort"></span></td></tr>
+                        <tr><td class="py-1 font-bold">Telefon:</td><td class="out-v-telefon"></td></tr>
+                        <tr><td class="py-1 font-bold">E-Mail:</td><td class="out-v-email"></td></tr>
+                    </table>
+                </div>
+                
+                <p class="mb-6">Mit der Durchführung aller erforderlichen Tätigkeiten im Zusammenhang mit der Netzanmeldung meiner <span class="font-bold underline out-v-anlage"></span> beim zuständigen Netzbetreiber.</p>
+                <p class="font-bold mb-2">Die Vollmacht umfasst insbesondere:</p>
+                <ul class="list-disc pl-6 space-y-2 mb-8">
+                    <li>Einreichung der Netzanmeldung</li>
+                    <li>Übermittlung aller erforderlichen Unterlagen und technischen Daten</li>
+                    <li>Kommunikation mit dem Netzbetreiber und gegebenenfalls dem Messstellenbetreiber</li>
+                    <li>Abstimmung von Terminen für Inbetriebnahme und Zählermontage</li>
+                    <li>Durchführung aller notwendigen administrativen Schritte bis zum Abschluss des Netzanschlussverfahrens</li>
+                </ul>
+                
+                <div class="mb-8">
+                    <h3 class="font-bold text-sm bg-gray-200 p-1 mb-2">Bankverbindung für die Einspeisevergütung - (Nur bei Photovoltaikanlagen)</h3>
+                    <p class="text-sm mb-3">Die folgenden Angaben werden für die Abwicklung der Einspeisevergütung bzw. die Kommunikation mit dem Netzbetreiber benötigt.</p>
+                    <table class="w-full text-sm">
+                        <tr><td class="py-1 w-1/4 font-bold">Kontoinhaber:</td><td class="out-v-kontoinhaber border-b border-gray-300"></td></tr>
+                        <tr><td class="py-1 font-bold">Bank:</td><td class="out-v-bank border-b border-gray-300"></td></tr>
+                        <tr><td class="py-1 font-bold">IBAN:</td><td class="out-v-iban border-b border-gray-300"></td></tr>
+                        <tr><td class="py-1 font-bold">BIC:</td><td class="out-v-bic border-b border-gray-300"></td></tr>
+                    </table>
+                </div>
+                
+                <p class="font-bold mb-1">Gültigkeit der Vollmacht</p>
+                <p class="mb-8 text-sm">Diese Vollmacht gilt ausschließlich für die oben genannte Anlage und kann jederzeit schriftlich widerrufen werden.</p>
+                
+                <div class="mt-20 flex justify-between items-end">
+                    <div class="w-[45%]"><p class="border-b border-black pb-1 mb-1 min-h-[1.5rem]"></p><p class="text-xs">Ort, Datum</p></div>
+                    <div class="w-[45%]"><p class="border-b border-black pb-1 mb-1 min-h-[1.5rem]"></p><p class="text-xs">Unterschrift</p></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TEMPLATE: VOLLMACHT VOLTARIO               -->
+        <!-- ========================================== -->
+        <div id="pdf-template-vollmacht-voltario" class="hidden-doc">
+            <div class="a4-page text-[14px] leading-relaxed text-slate-900">
+                <div class="flex justify-between items-start mb-12">
+                    <div class="pt-8"></div>
+                    <div class="text-right flex flex-col items-end">
+                        <img src="" class="out-custom-logo hidden h-16 object-contain mb-2 ml-auto" alt="Voltario Logo">
+                        <div class="out-logo-fallback text-right">
+                            <h1 class="text-3xl font-bold text-blue-900 m-0 leading-tight tracking-wide">Voltario</h1>
+                            <h2 class="text-md text-blue-700 m-0 tracking-widest">Elektrotechnik</h2>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-2">Voltario Elektrotechnik GmbH<br>Pfannschmidtstraße 21, 13125, Berlin</p>
+                    </div>
+                </div>
+
+                <div class="mb-8 border-b-2 border-black pb-4">
+                    <h1 class="text-2xl font-bold mb-1">Vollmacht</h1>
+                    <h2 class="text-sm font-bold">Durchführung aller Rechtsgeschäfte im Zusammenhang mit der Errichtung und Inbetriebnahme der nachfolgend genannten Anlage</h2>
+                </div>
+
+                <p class="mb-4">Hiermit erteile ich,</p>
+                
+                <table class="w-full text-sm mb-6 ml-4">
+                    <tr><td class="py-1 w-40 font-semibold">Name, Vorname:</td><td class="out-v-fullname"></td></tr>
+                    <tr>
+                        <td class="py-1 font-semibold align-top">wohnhaft in:</td>
+                        <td><span class="out-v-strasse"></span> <span class="out-v-hausnr"></span><br><span class="out-v-plz"></span> <span class="out-v-ort"></span></td>
+                    </tr>
+                </table>
+
+                <p class="mb-4 text-justify">
+                    der Firma <strong>Voltario Elektrotechnik GmbH, Pfannschmidtstraße 21, 13125, Berlin</strong> zur Vornahme aller Handlungen sowie Abgabe und Entgegennahme aller Erklärungen, die im Zusammenhang mit der Errichtung und Inbetriebnahme folgender Anlage(n) erforderlich werden:
+                </p>
+                <p class="mb-6 ml-4"><span class="font-bold underline out-v-anlage"></span>.</p>
+
+                <p class="mb-2">Das beinhaltet insbesondere, aber nicht ausschließlich, die folgenden Tätigkeiten:</p>
+                <ul class="list-disc pl-8 space-y-2 mb-6">
+                    <li>Beantragung einer Netzverträglichkeitsprüfung beim Netzbetreiber</li>
+                    <li>Beantragen eines Zählerwechsels beim Netzbetreiber</li>
+                    <li>Beantragen des Netzanschlusses beim Netzbetreiber</li>
+                    <li>Alle weiteren Schritte, um die Anlage ordnungsgemäß bei den Behörden und beim Energieversorger zu registrieren</li>
+                    <li>Etwaige erforderliche Registrierung für eine erweiterte Herstellergarantie bzw. ein Monitoring zur Anlagenüberwachung</li>
+                </ul>
+
+                <p class="mb-8 text-justify">
+                    Voltario Elektrotechnik GmbH ist berechtigt, die Geschäfte durch Vertragsparteien durchführen zu lassen. Ich erteile Voltario Elektrotechnik GmbH die Berechtigung, diese zur Durchführung aller zur Anmeldung erforderlichen Rechtsgeschäfte in meinem Namen zu bevollmächtigen (Untervollmacht).<br><br>
+                    Die notwendigen Kosten der Anmeldung und der Errichtung des Netzanschlusses trage ich als Anlagenbetreiber*in.
+                </p>
+
+                <div class="mb-8 p-4 bg-gray-50 border border-gray-200">
+                    <h3 class="font-bold text-sm mb-2">Standort der Anlage</h3>
+                    <p class="text-sm mb-3">Die Anlage soll auf dem folgenden Grundstück errichtet werden:</p>
+                    <table class="w-full text-sm">
+                        <tr><td class="py-1 w-1/3 font-semibold">Straße & Hausnummer:</td><td><span class="out-v-strasse"></span> <span class="out-v-hausnr"></span></td></tr>
+                        <tr><td class="py-1 font-semibold">PLZ & Ort:</td><td><span class="out-v-plz"></span> <span class="out-v-ort"></span></td></tr>
+                    </table>
+                </div>
+
+                <div class="mt-20 flex justify-between items-end">
+                    <div class="w-[45%]"><p class="border-b border-black pb-1 mb-1 min-h-[1.5rem]"></p><p class="text-xs">Ort, Datum</p></div>
+                    <div class="w-[45%]"><p class="border-b border-black pb-1 mb-1 min-h-[1.5rem]"></p><p class="text-xs">Unterschrift Anlagenbetreiber*in</p></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: FIRMEN VERWALTUNG (ADMIN) -->
+    <div id="admin-modal" class="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center hidden-doc">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md shadow-2xl relative">
+            <h2 class="text-xl font-bold text-slate-800 mb-4">⚙️ Firmen / Installateure verwalten</h2>
+            <p class="text-xs text-slate-500 mb-4">Eigene Firmen werden dauerhaft in deinem Browser gespeichert.</p>
+            
+            <h3 class="font-bold text-sm text-slate-700 mb-2">Gespeicherte Firmen:</h3>
+            <ul id="admin-company-list" class="mb-6 space-y-2 max-h-40 overflow-y-auto bg-slate-50 p-2 border rounded">
+                <!-- Wird durch JS befüllt -->
+            </ul>
+            
+            <div class="border-t border-slate-200 pt-4 space-y-3">
+                <h3 class="font-bold text-sm text-slate-700">Neue Firma hinzufügen</h3>
+                <input type="text" id="new-comp-name" placeholder="Name (z.B. Schmidt Solar)" class="w-full border border-slate-300 p-2 text-sm rounded focus:ring-2 focus:ring-indigo-500 outline-none">
+                <input type="text" id="new-comp-address" placeholder="Komplette Adresse (fürs PDF)" class="w-full border border-slate-300 p-2 text-sm rounded focus:ring-2 focus:ring-indigo-500 outline-none">
+                <button type="button" onclick="addCustomCompany()" class="w-full bg-green-600 hover:bg-green-700 text-white p-2 rounded font-bold transition-colors">Hinzufügen & Speichern</button>
+            </div>
+            
+            <div class="mt-6 text-right">
+                <button type="button" onclick="closeAdmin()" class="bg-slate-200 hover:bg-slate-300 text-slate-800 px-4 py-2 rounded font-bold transition-colors">Schließen</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Skripte zur Logik -->
+    <script>
+        const checkedBox = '☑';
+        const uncheckedBox = '☐';
+
+        // 1. FIRMEN-DATENBANK & LOCAL STORAGE LOGIK
+        const defaultCompanies = [
+            { id: "generic", name: "Generisch (Freie Eingabe)", address: "", template: "generic" },
+            { id: "enson", name: "Enson GmbH", address: "Enson GmbH", template: "generic" },
+            { id: "solar", name: "Solar Assembly Trades GmbH & Co. KG", address: "Solar Assembly Trades GmbH & Co. KG", template: "solar" },
+            { id: "voltario", name: "Voltario Elektrotechnik GmbH", address: "Voltario Elektrotechnik GmbH, Pfannschmidtstraße 21, 13125 Berlin", template: "voltario" },
+            { id: "tink", name: "tink GmbH", address: "tink GmbH, Sophienstraße 21, 10178 Berlin", template: "generic" }
+        ];
+
+        let customCompanies = JSON.parse(localStorage.getItem('customCompanies')) || [];
+
+        function getAllCompanies() {
+            return defaultCompanies.concat(customCompanies);
+        }
+
+        // Dropdown aktualisieren
+        function renderDropdown() {
+            const sel = document.getElementById('installer-selector');
+            const currentVal = sel.value; // aktuellen Wert merken
+            
+            sel.innerHTML = ''; // Leeren
+            
+            getAllCompanies().forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.id;
+                opt.innerText = c.name;
+                sel.appendChild(opt);
+            });
+
+            // Wenn der vorherige Wert noch existiert, wieder setzen
+            if (getAllCompanies().find(c => c.id === currentVal)) {
+                sel.value = currentVal;
+            } else {
+                sel.value = "generic";
+            }
+        }
+
+        // Admin Fenster Funktionen
+        function openAdmin() {
+            renderAdminList();
+            document.getElementById('admin-modal').classList.remove('hidden-doc');
+        }
+
+        function closeAdmin() {
+            document.getElementById('admin-modal').classList.add('hidden-doc');
+            // Formular zurücksetzen
+            document.getElementById('new-comp-name').value = '';
+            document.getElementById('new-comp-address').value = '';
+        }
+
+        function renderAdminList() {
+            const list = document.getElementById('admin-company-list');
+            list.innerHTML = '';
+            
+            if (customCompanies.length === 0) {
+                list.innerHTML = '<li class="text-xs text-slate-400 italic">Noch keine eigenen Firmen angelegt.</li>';
+                return;
+            }
+
+            customCompanies.forEach(c => {
+                const li = document.createElement('li');
+                li.className = "flex justify-between items-center bg-white p-2 border border-slate-200 rounded text-sm";
+                li.innerHTML = `
+                    <span class="font-semibold truncate w-3/4">${c.name}</span>
+                    <button onclick="removeCustomCompany('${c.id}')" class="text-red-500 hover:text-red-700 font-bold ml-2">Löschen</button>
+                `;
+                list.appendChild(li);
+            });
+        }
+
+        function addCustomCompany() {
+            const nameInput = document.getElementById('new-comp-name').value.trim();
+            const addrInput = document.getElementById('new-comp-address').value.trim();
+            
+            if (!nameInput) {
+                alert("Bitte gib einen Firmennamen ein!");
+                return;
+            }
+
+            const newId = 'custom_' + Date.now();
+            const newCompany = {
+                id: newId,
+                name: nameInput,
+                address: addrInput,
+                template: "generic" // Eigene Firmen nutzen immer das flexiblere generische Layout
+            };
+
+            customCompanies.push(newCompany);
+            localStorage.setItem('customCompanies', JSON.stringify(customCompanies));
+            
+            document.getElementById('new-comp-name').value = '';
+            document.getElementById('new-comp-address').value = '';
+            
+            renderAdminList();
+            renderDropdown();
+            
+            // Setze die neue Firma als aktiv
+            document.getElementById('installer-selector').value = newId;
+            handleInstallerChange();
+        }
+
+        function removeCustomCompany(id) {
+            customCompanies = customCompanies.filter(c => c.id !== id);
+            localStorage.setItem('customCompanies', JSON.stringify(customCompanies));
+            renderAdminList();
+            renderDropdown();
+            handleInstallerChange();
+        }
+
+        // LOGO UPLOAD FUNKTION
+        function loadLogo(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    document.querySelectorAll('.out-custom-logo').forEach(img => {
+                        img.src = e.target.result;
+                        img.classList.remove('hidden');
+                    });
+                    document.querySelectorAll('.out-logo-fallback').forEach(txt => {
+                        txt.classList.add('hidden');
+                    });
+                }
+                reader.readAsDataURL(file);
+            }
+        }
+
+        // Steuerung Dropdown -> Formularfelder
+        function handleInstallerChange() {
+            const val = document.getElementById('installer-selector').value;
+            const absenderInput = document.getElementById('in-absender');
+            
+            // Firma aus der Datenbank suchen
+            const selectedComp = getAllCompanies().find(c => c.id === val);
+            
+            if (selectedComp) {
+                absenderInput.value = selectedComp.address;
+            } else {
+                absenderInput.value = '';
+            }
+            
+            switchDocumentType();
+            updatePreview();
+        }
+
+        function switchDocumentType() {
+            const docType = document.getElementById('doc-type-selector').value;
+            const installerType = document.getElementById('installer-selector').value;
+            
+            // Herausfinden, welches Template die Firma braucht
+            const selectedComp = getAllCompanies().find(c => c.id === installerType);
+            const templateName = selectedComp ? (selectedComp.template || 'generic') : 'generic';
+            
+            // Steuerung der linken Eingabefelder
+            document.getElementById('inputs-allgemein').classList.toggle('hidden-doc', docType === 'vollmacht');
+            document.getElementById('inputs-abnahme').classList.toggle('hidden-doc', docType !== 'abnahme');
+            document.getElementById('inputs-abnahme-allgemein').classList.toggle('hidden-doc', docType !== 'abnahme');
+            document.getElementById('inputs-vollmacht').classList.toggle('hidden-doc', docType !== 'vollmacht');
+            
+            document.getElementById('installer-selector-container').classList.toggle('hidden-doc', docType !== 'vollmacht');
+            
+            // Logo Upload Menü nur bei generic/custom und voltario
+            if (docType === 'vollmacht' && templateName !== 'solar') {
+                document.getElementById('logo-upload-container').classList.remove('hidden-doc');
+            } else {
+                document.getElementById('logo-upload-container').classList.add('hidden-doc');
+            }
+
+            // Steuerung der rechten PDF-Templates
+            document.getElementById('pdf-template-abnahme').classList.add('hidden-doc');
+            document.getElementById('pdf-template-vollmacht-solar').classList.add('hidden-doc');
+            document.getElementById('pdf-template-vollmacht-generic').classList.add('hidden-doc');
+            document.getElementById('pdf-template-vollmacht-voltario').classList.add('hidden-doc');
+
+            if (docType === 'abnahme') {
+                document.getElementById('pdf-template-abnahme').classList.remove('hidden-doc');
+            } else if (docType === 'vollmacht') {
+                if(templateName === 'solar') document.getElementById('pdf-template-vollmacht-solar').classList.remove('hidden-doc');
+                else if(templateName === 'voltario') document.getElementById('pdf-template-vollmacht-voltario').classList.remove('hidden-doc');
+                else document.getElementById('pdf-template-vollmacht-generic').classList.remove('hidden-doc');
+            }
+
+            updatePreview();
+        }
+
+        function setCheck(id, isChecked) {
+            document.getElementById(id).innerText = isChecked ? checkedBox : uncheckedBox;
+        }
+
+        function updatePreview() {
+            const docType = document.getElementById('doc-type-selector').value;
+
+            if (docType === 'vollmacht') {
+                const vorname = document.getElementById('in-v-vorname').value;
+                const name = document.getElementById('in-v-name').value;
+                
+                const fields = {
+                    'out-v-vorname': vorname,
+                    'out-v-name': name,
+                    'out-v-fullname': name + ", " + vorname,
+                    'out-v-gebdatum': document.getElementById('in-v-gebdatum').value,
+                    'out-v-strasse': document.getElementById('in-v-strasse').value,
+                    'out-v-hausnr': document.getElementById('in-v-hausnr').value,
+                    'out-v-plz': document.getElementById('in-v-plz').value,
+                    'out-v-ort': document.getElementById('in-v-ort').value,
+                    'out-v-telefon': document.getElementById('in-v-telefon').value,
+                    'out-v-email': document.getElementById('in-v-email').value,
+                    'out-v-iban': document.getElementById('in-v-iban').value,
+                    'out-v-bic': document.getElementById('in-v-bic').value,
+                    'out-v-bank': document.getElementById('in-v-bank').value,
+                    'out-v-kontoinhaber': document.getElementById('in-v-kontoinhaber').value,
+                    'out-v-anlage': document.getElementById('in-v-anlage').value
+                };
+
+                for (const [cls, val] of Object.entries(fields)) {
+                    document.querySelectorAll('.' + cls).forEach(el => el.innerText = val);
+                }
+            } else {
+                const vals = {
+                    'out-absender': document.getElementById('in-absender').value,
+                    'out-empfaenger': document.getElementById('in-empfaenger').value,
+                    'out-bauvorhaben': document.getElementById('in-bauvorhaben').value,
+                    'out-angebotsnr': document.getElementById('in-angebotsnr').value,
+                    'out-abnahmetag': document.getElementById('in-abnahmetag').value
+                };
+
+                for (const [cls, val] of Object.entries(vals)) {
+                    document.querySelectorAll('.' + cls).forEach(el => el.innerText = val);
+                }
+
+                if (docType === 'abnahme') {
+                    setCheck('out-chk-wp', document.getElementById('chk-wp').checked);
+                    setCheck('out-chk-wb', document.getElementById('chk-wb').checked);
+                    setCheck('out-chk-pv', document.getElementById('chk-pv').checked);
+                    setCheck('out-chk-ka', document.getElementById('chk-ka').checked);
+                    setCheck('out-chk-zl', document.getElementById('chk-zl').checked);
+                    setCheck('out-chk-wr', document.getElementById('chk-wr').checked);
+                    setCheck('out-chk-es', document.getElementById('chk-es').checked);
+                    
+                    document.getElementById('out-module').innerText = document.getElementById('in-module').value;
+                    document.getElementById('out-sonstiges').innerText = document.getElementById('in-sonstiges').value;
+
+                    const feststellung = document.querySelector('input[name="feststellung"]:checked').value;
+                    setCheck('out-f-maengelfrei', feststellung === 'maengelfrei');
+                    setCheck('out-f-maengel', feststellung === 'maengel');
+                    setCheck('out-f-verweigert', feststellung === 'verweigert');
+
+                    const einweisung = document.querySelector('input[name="einweisung"]:checked').value;
+                    setCheck('out-e-ja', einweisung === 'ja');
+                    setCheck('out-e-nein', einweisung === 'nein');
+
+                    const doku = document.querySelector('input[name="doku"]:checked').value;
+                    setCheck('out-d-ja', doku === 'ja');
+                    setCheck('out-d-nein', doku === 'nein');
+
+                    const mangelGegenstand = document.querySelector('input[name="mangel_gegenstand"]:checked').value;
+                    setCheck('out-m-gesamt', mangelGegenstand === 'gesamt');
+                    setCheck('out-m-teil', mangelGegenstand === 'teil');
+
+                    const tbody = document.getElementById('maengel-table-body');
+                    tbody.innerHTML = '';
+                    
+                    const m1 = [document.getElementById('m1-an').value, document.getElementById('m1-desc').value, document.getElementById('m1-bis').value];
+                    const m2 = [document.getElementById('m2-an').value, document.getElementById('m2-desc').value, document.getElementById('m2-bis').value];
+                    const inputsArray = [m1, m2];
+
+                    for (let i = 1; i <= 10; i++) {
+                        const tr = document.createElement('tr');
+                        let cellAn = '', cellDesc = '', cellBis = '';
+                        
+                        if(i <= inputsArray.length) {
+                            cellAn = inputsArray[i-1][0];
+                            cellDesc = inputsArray[i-1][1];
+                            cellBis = inputsArray[i-1][2];
+                        }
+                        tr.innerHTML = `<td class="text-center">${i}</td><td class="h-8">${cellAn}</td><td>${cellDesc}</td><td>${cellBis}</td>`;
+                        tbody.appendChild(tr);
+                    }
+                } 
+            }
+        }
+
+        function generatePDF() {
+            const docType = document.getElementById('doc-type-selector').value;
+            let elementId = '';
+            let fileName = '';
+
+            if (docType === 'abnahme') {
+                elementId = 'pdf-template-abnahme';
+                fileName = 'Abnahmeprotokoll.pdf';
+            } else if (docType === 'vollmacht') {
+                const installerType = document.getElementById('installer-selector').value;
+                const selectedComp = getAllCompanies().find(c => c.id === installerType);
+                const templateName = selectedComp ? (selectedComp.template || 'generic') : 'generic';
+                
+                if(templateName === 'solar') elementId = 'pdf-template-vollmacht-solar';
+                else if(templateName === 'voltario') elementId = 'pdf-template-vollmacht-voltario';
+                else elementId = 'pdf-template-vollmacht-generic';
+                
+                fileName = 'Vollmacht_Netzanmeldung.pdf';
+            }
+
+            const element = document.getElementById(elementId);
+            const opt = {
+                margin:       0,
+                filename:     fileName,
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true, scrollY: 0 }, 
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+            html2pdf().set(opt).from(element).save();
+        }
+
+        // Initiale Ausführung beim Start
+        renderDropdown();
+        handleInstallerChange();
+    </script>
+</body>
+</html>
